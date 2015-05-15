@@ -6,6 +6,7 @@
 #include<string>
 #include<ctime>
 #include <climits>
+#include <queue>
 #include "jsoncpp/json.h"
 using namespace std;
 int n, m;
@@ -79,10 +80,63 @@ bool validDirection(int id, int k)  //判断当前移动方向的下一格是否合法
 	return true;
 }
 
+////////////////////////////////////////////////////////////////////算法层面的东西
 int Rand(int p)   //随机生成一个0到p的数字
 {
 	return rand()*rand()*rand() % p;
 }
+
+/*
+为每一个可走的点生成一个权值：从该点出发到达图中其他点中的最短距离
+中的最大值
+*/
+int gen_greedy_score(int x, int y)
+{
+	bool temp_invalid[maxn][maxn];
+	memcpy(temp_invalid, invalid, sizeof(temp_invalid));
+	int temp_score[maxn][maxn];
+	memset(temp_score, 0, sizeof(temp_score));
+	point start(x, y);
+	queue<point> q;
+	q.push(start);
+	temp_invalid[x][y] = 1;
+	while (!q.empty())
+	{
+		point p = q.front();
+		q.pop();
+		if (p.x - 1 >= 1 && p.x - 1 <= n && !temp_invalid[p.x - 1][p.y])
+		{
+			temp_score[p.x - 1][p.y] = temp_score[p.x][p.y] + 1;
+			temp_invalid[p.x - 1][p.y] = 1;
+			q.push(point(p.x - 1, p.y));
+		}
+		if (p.x + 1 >= 1 && p.x + 1 <= n && !temp_invalid[p.x + 1][p.y])
+		{
+			temp_score[p.x + 1][p.y] = temp_score[p.x][p.y] + 1;
+			temp_invalid[p.x + 1][p.y] = 1;
+			q.push(point(p.x + 1, p.y));
+		}
+		if (p.y - 1 >= 1 && p.y - 1 <= m && !temp_invalid[p.x][p.y - 1])
+		{
+			temp_score[p.x][p.y - 1] = temp_score[p.x][p.y] + 1;
+			temp_invalid[p.x][p.y - 1] = 1;
+			q.push(point(p.x, p.y - 1));
+		}
+		if (p.y + 1 >= 1 && p.y + 1 <= m && !temp_invalid[p.x][p.y + 1])
+		{
+			temp_score[p.x][p.y + 1] = temp_score[p.x][p.y] + 1;
+			temp_invalid[p.x][p.y + 1] = 1;
+			q.push(point(p.x, p.y + 1));
+		}
+	}
+	int max_score = 1;
+	for (int i = 0; i < maxn; i++)
+	for (int j = 0; j < maxn; j++)
+	if (temp_score[i][j] > max_score)
+		max_score = temp_score[i][j];
+	return max_score;
+}
+////////////////////////////////////////////////////////////////////
 
 int main()
 {
@@ -118,7 +172,6 @@ int main()
 		int ox = input["requests"][(Json::Value::UInt) 0]["obstacle"][(Json::Value::UInt) i]["x"].asInt();
 		int oy = input["requests"][(Json::Value::UInt) 0]["obstacle"][(Json::Value::UInt) i]["y"].asInt();
 		invalid[ox][oy] = 1;
-		score[ox][oy] = INT_MIN;//障碍权值设为最负，碰不得啊！！！！！
 	}
 
 	//根据历史信息恢复现场
@@ -146,13 +199,73 @@ int main()
 
 	srand((unsigned)time(0) + total);
 
-	//随机做出一个决策
+	//做出一个决策
 	Json::Value ret;
-	if (posCount)
-		ret["response"]["direction"] = possibleDire[rand() % posCount];
-	else
-		ret["response"]["direction"] = 0;//无路可走的时候往北走吧
+	//////////////////随机走法//////////////
+	//if (posCount)
+	//	ret["response"]["direction"] = possibleDire[rand() % posCount];
+	//else
+	//	ret["response"]["direction"] = 0;//无路可走的时候往北走吧
+	////////////////////////////////////////
 
+	/////////////////贪心走法///////////////
+
+	for (int i = 1; i <= n; i++)
+	{
+		for (int j = 1; j <= m; j++)
+		{
+			if (isInBody(i, j))
+				invalid[i][j] = 1;
+		}
+	}
+
+	if (!posCount)
+	{
+		point another_snake_start = *(snake[1].begin());
+		point snake_start = *(snake[0].begin());
+		//看能不能与对面的蛇同归于尽
+		if (snake_start.x - 1 == another_snake_start.x && snake_start.y == another_snake_start.y)
+			ret["response"]["direction"] = 0;
+		else if (snake_start.x == another_snake_start.x && snake_start.y + 1 == another_snake_start.y)
+			ret["response"]["direction"] = 1;
+		else if (snake_start.x + 1 == another_snake_start.x && snake_start.y == another_snake_start.y)
+			ret["response"]["direction"] = 2;
+		else if (snake_start.x == another_snake_start.x && snake_start.y - 1 == another_snake_start.y)
+			ret["response"]["direction"] = 3;
+		else
+			ret["response"]["direction"] = 0;//我选择死亡
+	}
+	else
+	{
+		int max_score = 0;
+		int next_pos = 0;
+		point p = *(snake[0].begin());
+		for (int i = 0; i < posCount; i++)
+		{
+			if (possibleDire[i] == 0 && gen_greedy_score(p.x - 1, p.y) > max_score)
+			{
+				next_pos = 0;
+				max_score = gen_greedy_score(p.x - 1, p.y);
+			}
+			else if (possibleDire[i] == 1 && gen_greedy_score(p.x, p.y + 1) > max_score)
+			{
+				next_pos = 1;
+				max_score = gen_greedy_score(p.x, p.y + 1);
+			}
+			else if (possibleDire[i] == 2 && gen_greedy_score(p.x + 1, p.y) > max_score)
+			{
+				next_pos = 2;
+				max_score = gen_greedy_score(p.x + 1, p.y);
+			}
+			else if (possibleDire[i] == 3 && gen_greedy_score(p.x, p.y - 1) > max_score)
+			{
+				next_pos = 3;
+				max_score = gen_greedy_score(p.x, p.y - 1);
+			}
+			ret["debug"] = max_score;
+		}
+		ret["response"]["direction"] = next_pos;
+	}
 	Json::FastWriter writer;
 	cout << writer.write(ret) << endl;
 
